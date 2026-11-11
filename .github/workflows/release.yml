@@ -1,0 +1,98 @@
+# Releases every plugin whose `plugin.json` names a version the index does not: builds its archive
+# for each target, publishes them as the GitHub release `<id>-v<version>`, and only then points
+# `steve-store.json` at them, so the index never names an archive that is not there.
+name: Release
+on:
+  push:
+    branches: [main]
+    paths: ['plugins/*/plugin.json']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  pending:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      plugins: ${{ steps.pending.outputs.plugins }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - id: pending
+        run: |
+          python3 tools/store.py check
+          echo "plugins=$(python3 tools/store.py pending)" >> "$GITHUB_OUTPUT"
+  build:
+    needs: pending
+    if: needs.pending.outputs.plugins != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: ${{ fromJSON(needs.pending.outputs.plugins) }}
+        platform:
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - runner: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 40
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: 1.99.1
+          targets: ${{ matrix.platform.target }}
+      - name: Test
+        shell: bash
+        run: if [ -x "plugins/${{ matrix.plugin }}/test.sh" ]; then cd "plugins/${{ matrix.plugin }}" && ./test.sh; fi
+      - name: Package
+        run: python3 tools/store.py package "${{ matrix.plugin }}" --target "${{ matrix.platform.target }}" --out dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: archive-${{ matrix.plugin }}-${{ matrix.platform.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 2
+  publish:
+    needs: [pending, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PLUGINS: ${{ needs.pending.outputs.plugins }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: archive-*
+          path: dist
+          merge-multiple: true
+      - name: Publish the archives, then the index
+        shell: bash
+        run: |
+          set -euo pipefail
+          for plugin in $(python3 -c 'import json, os; print(" ".join(json.loads(os.environ["PLUGINS"])))'); do
+            version="$(python3 tools/store.py version "$plugin")"
+            tag="$plugin-v$version"
+            if ! gh release view "$tag" >/dev/null 2>&1; then
+              gh release create "$tag" --target "$GITHUB_SHA" --title "$plugin $version" \
+                --notes "The \`$plugin\` plugin, version $version. Install it from Steve's Plugins page; these archives are what the library's index names."
+            fi
+            gh release upload "$tag" dist/"$plugin-$version"-*.tar.gz --clobber
+            python3 tools/store.py index "$plugin" --dist dist \
+              --base "https://github.com/$GITHUB_REPOSITORY/releases/download/$tag"
+          done
+          python3 tools/store.py check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add steve-store.json
+          git diff --cached --quiet || git commit -m "Index: $(python3 -c 'import json, os; print(", ".join(json.loads(os.environ["PLUGINS"])))')"
+          git push origin HEAD:main

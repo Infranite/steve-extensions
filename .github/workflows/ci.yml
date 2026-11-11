@@ -1,0 +1,44 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  library:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Manifests and index
+        run: |
+          python3 tools/store.py check
+          python3 tools/test-store.py
+  plugins:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+          - runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: 1.99.1
+          components: clippy, rustfmt
+      - name: Test every plugin
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in plugins/*/; do
+            if [ -x "$dir/test.sh" ]; then (cd "$dir" && ./test.sh); fi
+          done
+      - name: Package every plugin as a directory library
+        run: python3 tools/store.py local "$RUNNER_TEMP/library"
