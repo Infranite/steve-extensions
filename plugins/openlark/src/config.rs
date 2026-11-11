@@ -26,7 +26,8 @@ pub struct Args {
     #[arg(long, env = "STEVE_PLUGIN_DATA")]
     pub data: PathBuf,
     /// Exit as soon as standard input reaches end of file (the Hub holds it open while it runs).
-    #[arg(long, env = "STEVE_PLUGIN_SUPERVISED")]
+    /// As an environment variable, `1` turns it on; empty, `0` or `false` leave it off.
+    #[arg(long, env = "STEVE_PLUGIN_SUPERVISED", value_parser = clap::builder::FalseyValueParser::new())]
     pub supervised: bool,
 }
 
