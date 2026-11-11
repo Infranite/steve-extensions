@@ -63,6 +63,9 @@ fn by_env(files: &Files, listen: &str) -> Command {
     command
 }
 
+/// A way to start the plugin on a set of files, after spoiling one of them.
+type Start = Box<dyn Fn(&Files) -> Command>;
+
 struct Plugin {
     child: Child,
     /// Held open the way the Hub holds it; `None` when the plugin got an input already at its end.
@@ -215,7 +218,7 @@ async fn a_plugin_that_cannot_start_says_why_and_exits() {
     let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let taken = taken.local_addr().unwrap().to_string();
 
-    let cases: Vec<(&str, Box<dyn Fn(&Files) -> Command>, &str)> = vec![
+    let cases: Vec<(&str, Start, &str)> = vec![
         (
             "no token file",
             Box::new(|f| {

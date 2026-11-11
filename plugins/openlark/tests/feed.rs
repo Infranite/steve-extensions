@@ -275,9 +275,13 @@ async fn every_kind_of_change_is_the_item_it_should_be() {
     fake.append(json!({"kind": "calendar", "op": "upsert", "event": {"id": "1"}}));
     // the gateway could not attach the body, but it can still be read
     let late = fake.w().store(DM, GRACE, "too big to attach", now_ms());
-    fake.append(json!({"kind": "message", "op": "upsert", "message_id": late["id"], "chat": DM, "body": "unavailable"}));
+    fake.append(
+        json!({"kind": "message", "op": "upsert", "message_id": late["id"], "chat": DM, "body": "unavailable"}),
+    );
     // or it cannot: that chat has to be read again
-    fake.append(json!({"kind": "message", "op": "upsert", "message_id": "99999", "chat": GROUP, "body": "unavailable"}));
+    fake.append(
+        json!({"kind": "message", "op": "upsert", "message_id": "99999", "chat": GROUP, "body": "unavailable"}),
+    );
     // the gateway's own gaps, of one chat and of all
     fake.append(json!({"kind": "gap", "from": 3, "to": 4, "chats": [DM]}));
     fake.append(json!({"kind": "gap", "from": 3, "to": 4, "chats": []}));

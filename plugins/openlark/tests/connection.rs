@@ -206,9 +206,7 @@ async fn a_silent_hub_is_dropped_and_a_pinging_one_is_kept() {
 async fn an_expired_or_locked_session_is_told_and_then_its_return() {
     let rig = Rig::start().await;
     let mut hub = rig.hub().await;
-    let send = |key: &str| {
-        json!({"chat_id": GROUP_OC, "text": "hello", "idempotency_key": key, "expected_sender": id_handle(ME)})
-    };
+    let send = |key: &str| json!({"chat_id": GROUP_OC, "text": "hello", "idempotency_key": key, "expected_sender": id_handle(ME)});
 
     rig.fake().w().session = "expired".into();
     let told = hub.note("session.status").await;
@@ -282,11 +280,11 @@ async fn a_gateway_that_goes_away_is_reported_and_so_is_its_return() {
     let told = hub.note("push.status").await;
     assert_eq!(told["status"], "down");
     assert!(told["since_ms"].is_i64() && told["reason"].is_string());
+    assert_eq!(reason(&hub.call("chats.get", json!({"chat_id": GROUP_OC})).await.unwrap_err()), "upstream_unavailable");
     assert_eq!(
-        reason(&hub.call("chats.get", json!({"chat_id": GROUP_OC})).await.unwrap_err()),
+        reason(&hub.call("changes.subscribe", json!({"from": "now"})).await.unwrap_err()),
         "upstream_unavailable"
     );
-    assert_eq!(reason(&hub.call("changes.subscribe", json!({"from": "now"})).await.unwrap_err()), "upstream_unavailable");
     hub.call("me.get", json!({})).await.unwrap();
     let mut second = Hub::connect(rig.addr, "/ws", Some(HUB_TOKEN)).await.unwrap();
     let hello = second.hello().await.unwrap();
@@ -389,7 +387,9 @@ async fn a_credential_refused_from_the_start_is_said_in_hello() {
         let mut hub = Hub::connect(rig.addr, "/ws", Some(HUB_TOKEN)).await.unwrap();
         match hub.hello().await {
             Ok(hello) => break hello,
-            Err(_) if accepted.elapsed() < Duration::from_secs(3) => tokio::time::sleep(Duration::from_millis(50)).await,
+            Err(_) if accepted.elapsed() < Duration::from_secs(3) => {
+                tokio::time::sleep(Duration::from_millis(50)).await
+            }
             Err(e) => panic!("the credential is accepted, and hello still says {e}"),
         }
     };

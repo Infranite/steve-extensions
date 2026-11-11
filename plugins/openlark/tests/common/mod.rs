@@ -116,11 +116,17 @@ impl World {
                 ME.to_string(),
                 json!({"id": ME, "name": "Ada", "email": "Ada@Example.com", "union_id": "on_ada", "tenant_id": TENANT}),
             ),
-            (GRACE.to_string(), json!({"id": GRACE, "name": "Grace", "email": "grace@example.com", "tenant_id": TENANT})),
+            (
+                GRACE.to_string(),
+                json!({"id": GRACE, "name": "Grace", "email": "grace@example.com", "tenant_id": TENANT}),
+            ),
             ("50".to_string(), json!({"id": "50", "name": "Helper", "kind": "bot", "tenant_id": TENANT})),
         ]);
         let chats = BTreeMap::from([
-            (GROUP.to_string(), json!({"id": GROUP, "oc": GROUP_OC, "kind": "group", "name": "Design", "external": false})),
+            (
+                GROUP.to_string(),
+                json!({"id": GROUP, "oc": GROUP_OC, "kind": "group", "name": "Design", "external": false}),
+            ),
             (DM.to_string(), json!({"id": DM, "kind": "p2p", "name": "Grace"})),
         ]);
         let all = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
@@ -131,7 +137,14 @@ impl World {
             hello_user: true,
             me: ME.into(),
             tenant: TENANT.into(),
-            scopes: all(&["chats.read", "messages.read", "messages.send", "messages.recall", "reactions.write", "people.read"]),
+            scopes: all(&[
+                "chats.read",
+                "messages.read",
+                "messages.send",
+                "messages.recall",
+                "reactions.write",
+                "people.read",
+            ]),
             features: all(&["changes.v1", "im.v1", "recall.v1", "media.v1", "org.v1", "push_status.v1"]),
             push_connected: true,
             users,
@@ -273,7 +286,8 @@ impl Fake {
         if !conn.hello {
             return Err(invalid());
         }
-        let need = |w: &World, scope: &str| if w.scopes.iter().any(|s| s == scope) { Ok(()) } else { Err(fail("scope")) };
+        let need =
+            |w: &World, scope: &str| if w.scopes.iter().any(|s| s == scope) { Ok(()) } else { Err(fail("scope")) };
         match method {
             "push.status" => {
                 keys(&[])?;
@@ -448,7 +462,8 @@ impl Fake {
             "people.batch" => {
                 keys(&["users"])?;
                 need(&w, "people.read")?;
-                let ids: Vec<&str> = p["users"].as_array().ok_or_else(invalid)?.iter().filter_map(Value::as_str).collect();
+                let ids: Vec<&str> =
+                    p["users"].as_array().ok_or_else(invalid)?.iter().filter_map(Value::as_str).collect();
                 let people: Vec<Value> = ids
                     .iter()
                     .filter_map(|id| w.users.get(*id))
@@ -456,7 +471,8 @@ impl Fake {
                         // other people's open ids are not known to the gateway
                         let mut person = u.clone();
                         person.as_object_mut().unwrap().remove("union_id");
-                        person["avatar_url"] = format!("https://cdn.example.com/{}.png", u["id"].as_str().unwrap()).into();
+                        person["avatar_url"] =
+                            format!("https://cdn.example.com/{}.png", u["id"].as_str().unwrap()).into();
                         person
                     })
                     .collect();
@@ -474,11 +490,15 @@ impl Fake {
         let first_kept = if w.journal.is_empty() { w.head + 1 } else { w.earliest() };
         if *sent + 1 < first_kept {
             // what was discarded is one gap, at the position of its last change
-            items.push(json!({"seq": first_kept - 1, "kind": "gap", "from": *sent + 1, "to": first_kept - 1, "chats": []}));
+            items.push(
+                json!({"seq": first_kept - 1, "kind": "gap", "from": *sent + 1, "to": first_kept - 1, "chats": []}),
+            );
         }
         items.extend(w.journal.iter().filter(|c| c["seq"].as_u64().unwrap() > *sent).cloned());
         *sent = w.head;
-        let frame = |chunk: &[Value]| json!({"jsonrpc": "2.0", "method": "changes.batch", "params": {"items": chunk}}).to_string();
+        let frame = |chunk: &[Value]| {
+            json!({"jsonrpc": "2.0", "method": "changes.batch", "params": {"items": chunk}}).to_string()
+        };
         items.chunks(w.batch_max.max(1)).map(frame).collect()
     }
 }
@@ -778,7 +798,9 @@ impl Hub {
             let next = tokio::time::timeout(wait, self.ws.next()).await.ok()?;
             match next {
                 None | Some(Err(_)) => return Some(Frame::Closed(None)),
-                Some(Ok(Message::Text(text))) => return Some(Frame::Json(serde_json::from_str(text.as_str()).unwrap())),
+                Some(Ok(Message::Text(text))) => {
+                    return Some(Frame::Json(serde_json::from_str(text.as_str()).unwrap()));
+                }
                 Some(Ok(Message::Close(frame))) => return Some(Frame::Closed(frame.map(|f| u16::from(f.code)))),
                 Some(Ok(_)) => {}
             }

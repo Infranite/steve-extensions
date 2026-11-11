@@ -90,7 +90,10 @@ async fn a_write_for_another_user_is_refused_before_anything_happens() {
     let target = json!({"source_id": target["id"]});
     let writes = |sender: Value| {
         [
-            ("messages.send", json!({"chat_id": GROUP_OC, "text": "x", "idempotency_key": "k1", "expected_sender": sender})),
+            (
+                "messages.send",
+                json!({"chat_id": GROUP_OC, "text": "x", "idempotency_key": "k1", "expected_sender": sender}),
+            ),
             (
                 "messages.reply",
                 json!({"chat_id": GROUP_OC, "to": target, "text": "x", "idempotency_key": "k2", "expected_sender": sender}),
@@ -227,7 +230,8 @@ async fn a_recall_takes_the_message_back() {
     let recall = json!({"chat_id": GROUP_OC, "target": target, "expected_sender": id_handle(ME)});
     assert_eq!(hub.call("messages.recall", recall.clone()).await.unwrap(), json!({}));
     assert_eq!(rig.fake().w().called("messages.recall"), [json!({"message": sent["source_id"]})]);
-    let read = hub.call("messages.get", json!({"items": [{"chat_id": GROUP_OC, "source_id": sent["source_id"]}]})).await;
+    let read =
+        hub.call("messages.get", json!({"items": [{"chat_id": GROUP_OC, "source_id": sent["source_id"]}]})).await;
     let read = read.unwrap()["messages"][0].clone();
     assert_eq!((read["recalled"].as_bool(), read["text"].as_str()), (Some(true), Some("")));
 
@@ -248,9 +252,7 @@ async fn the_three_reactions_steve_uses_are_lark_reactions() {
     let message = rig.fake().w().store(GROUP, GRACE, "please look", 1_000);
     let id = message["id"].as_str().unwrap();
     let mut hub = rig.hub().await;
-    let react = |emoji: &str| {
-        json!({"chat_id": GROUP_OC, "target": {"source_id": id}, "emoji": emoji, "expected_sender": id_handle(ME)})
-    };
+    let react = |emoji: &str| json!({"chat_id": GROUP_OC, "target": {"source_id": id}, "emoji": emoji, "expected_sender": id_handle(ME)});
     for (emoji, key) in [("👀", "OnIt"), ("✅", "DONE"), ("❌", "CrossMark"), ("✅\u{fe0f}", "DONE")] {
         assert_eq!(hub.call("reactions.add", react(emoji)).await.unwrap(), json!({"reaction_id": key}), "{emoji}");
     }

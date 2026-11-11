@@ -75,7 +75,11 @@ fn log_filter() -> EnvFilter {
 async fn main() -> ExitCode {
     let args = Args::parse();
     let stderr = std::io::stderr;
-    tracing_subscriber::fmt().with_writer(stderr).with_ansi(stderr().is_terminal()).with_env_filter(log_filter()).init();
+    tracing_subscriber::fmt()
+        .with_writer(stderr)
+        .with_ansi(stderr().is_terminal())
+        .with_env_filter(log_filter())
+        .init();
 
     let (addr, settings) = match Settings::load(&args) {
         Ok(loaded) => loaded,
