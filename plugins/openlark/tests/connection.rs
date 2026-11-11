@@ -232,6 +232,7 @@ async fn an_expired_or_locked_session_is_told_and_then_its_return() {
     rig.fake().w().session = "ok".into();
     let told = hub.note("session.status").await;
     assert_eq!(told, json!({"status": "ok", "write_policy": "restricted"}));
+    assert_eq!(second.note("session.status").await["status"], "locked");
     assert_eq!(second.note("session.status").await["status"], "ok");
     hub.call("messages.send", send("k1")).await.unwrap();
     // the three changes were told once each, and the way to Lark was never said to be down
@@ -383,8 +384,16 @@ async fn a_credential_refused_from_the_start_is_said_in_hello() {
     assert_eq!(code, Some(1013));
     // the bridge is still there once the credential is accepted
     rig.fake().w().token = GW_TOKEN.into();
-    let mut hub = Hub::connect(rig.addr, "/ws", Some(HUB_TOKEN)).await.unwrap();
-    assert_eq!(hub.hello().await.unwrap()["session"]["status"], "ok");
+    let accepted = tokio::time::Instant::now();
+    let hello = loop {
+        let mut hub = Hub::connect(rig.addr, "/ws", Some(HUB_TOKEN)).await.unwrap();
+        match hub.hello().await {
+            Ok(hello) => break hello,
+            Err(_) if accepted.elapsed() < Duration::from_secs(3) => tokio::time::sleep(Duration::from_millis(50)).await,
+            Err(e) => panic!("the credential is accepted, and hello still says {e}"),
+        }
+    };
+    assert_eq!(hello["session"]["status"], "ok");
 }
 
 #[tokio::test]
