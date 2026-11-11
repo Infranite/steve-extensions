@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{IsTerminal, Read};
 use std::process::ExitCode;
 
 use clap::Parser;
@@ -58,11 +58,24 @@ async fn shutdown(supervised: bool) {
     tracing::info!("stopping: {reason}");
 }
 
+/// What is logged. `RUST_LOG` may name a level for the plugin's own lines; the libraries under
+/// it stay at `info`, because at their finer levels they print requests with their headers, and
+/// the two bearer tokens are headers.
+fn log_filter() -> EnvFilter {
+    let asked = std::env::var("RUST_LOG").unwrap_or_default().trim().to_lowercase();
+    let level = match asked.as_str() {
+        "off" | "error" | "warn" | "info" | "debug" | "trace" => asked.as_str(),
+        _ => "info",
+    };
+    let others = if matches!(level, "off" | "error" | "warn") { level } else { "info" };
+    EnvFilter::new(format!("{others},steve_plugin_openlark={level}"))
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let args = Args::parse();
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::fmt().with_writer(std::io::stderr).with_env_filter(filter).init();
+    let stderr = std::io::stderr;
+    tracing_subscriber::fmt().with_writer(stderr).with_ansi(stderr().is_terminal()).with_env_filter(log_filter()).init();
 
     let (addr, settings) = match Settings::load(&args) {
         Ok(loaded) => loaded,
