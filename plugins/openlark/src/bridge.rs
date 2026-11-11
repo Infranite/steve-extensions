@@ -90,8 +90,10 @@ impl Bridge {
         let rpc = RpcError::new;
         match e {
             GwError::Down => rpc(Reason::UpstreamUnavailable, "the openlark gateway cannot be reached"),
-            GwError::Unauthorized => rpc(Reason::SessionExpired, "the openlark gateway refuses the plugin's credential")
-                .with("detail", "gateway_credential_refused"),
+            GwError::Unauthorized => {
+                rpc(Reason::SessionExpired, "the openlark gateway refuses the plugin's credential")
+                    .with("detail", "gateway_credential_refused")
+            }
             GwError::Timeout => rpc(Reason::Timeout, "the openlark gateway did not answer in time"),
             GwError::Protocol(_) => rpc(Reason::Internal, "the openlark gateway gave an answer the plugin cannot read"),
             GwError::Rpc { code, retry_after_ms } => match code.as_str() {

@@ -267,7 +267,8 @@ mod tests {
     fn the_config_is_a_flat_object_of_strings() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.json");
-        std::fs::write(&path, r#"{"gateway_url":"ws://127.0.0.1:9","gateway_token":"olk_example","other":"x"}"#).unwrap();
+        std::fs::write(&path, r#"{"gateway_url":"ws://127.0.0.1:9","gateway_token":"olk_example","other":"x"}"#)
+            .unwrap();
         let (e, t) = read_gateway(&path).unwrap();
         assert_eq!(e.agent.as_str(), "ws://127.0.0.1:9/v0/agent");
         assert_eq!(t, "olk_example");

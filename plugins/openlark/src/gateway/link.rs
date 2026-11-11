@@ -181,7 +181,10 @@ impl Link {
             let status = if ended == GwError::Unauthorized { LinkStatus::Refused } else { LinkStatus::Down };
             let was = self.state.borrow().status;
             if was != status {
-                tracing::warn!("the gateway link is {}: {ended}", if status == LinkStatus::Refused { "refused" } else { "down" });
+                tracing::warn!(
+                    "the gateway link is {}: {ended}",
+                    if status == LinkStatus::Refused { "refused" } else { "down" }
+                );
             }
             self.state.send_modify(|st| {
                 st.status = status;
@@ -250,7 +253,8 @@ impl Link {
                 identity = Some(Identity { user: me.user, tenant_id: me.tenant.id });
             }
             Err(e) if e.code() == Some("session") => {
-                let probe = client::connect(&self.settings.gateway, &self.settings.gateway_token, &self.settings.timing, None);
+                let probe =
+                    client::connect(&self.settings.gateway, &self.settings.gateway_token, &self.settings.timing, None);
                 session = match probe.await.map(|c| Session::parse(&c.hello.account.session)) {
                     Ok(Session::Ok) | Err(_) if session != Session::Ok => session,
                     Ok(Session::Ok) | Err(_) => Session::Expired,
@@ -276,7 +280,12 @@ impl Link {
     }
 
     /// `Ok(None)` when the gateway or the credential does not offer the push state.
-    async fn push_status(&self, conn: &GwConn, features: &[String], scopes: &[String]) -> Result<Option<bool>, GwError> {
+    async fn push_status(
+        &self,
+        conn: &GwConn,
+        features: &[String],
+        scopes: &[String],
+    ) -> Result<Option<bool>, GwError> {
         if !features.iter().any(|f| f == "push_status.v1") || !scopes.iter().any(|s| s == "messages.read") {
             return Ok(None);
         }

@@ -83,7 +83,8 @@ pub async fn download(
         Some(len) if len > cap => StatusCode::PAYLOAD_TOO_LARGE.into_response(),
         Some(len) => {
             let body = Body::from_stream(upstream.bytes_stream());
-            (StatusCode::OK, [(CONTENT_TYPE, content_type), (CONTENT_LENGTH, HeaderValue::from(len))], body).into_response()
+            (StatusCode::OK, [(CONTENT_TYPE, content_type), (CONTENT_LENGTH, HeaderValue::from(len))], body)
+                .into_response()
         }
         // a length must be announced, so a body of unknown length is read first
         None => {

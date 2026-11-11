@@ -238,7 +238,9 @@ mod tests {
 
     #[test]
     fn an_error_is_read_by_its_code() {
-        let e = rpc_error(&json!({"code": -32000, "message": "slow", "data": {"code": "rate_limited", "retry_after_ms": 700}}));
+        let e = rpc_error(
+            &json!({"code": -32000, "message": "slow", "data": {"code": "rate_limited", "retry_after_ms": 700}}),
+        );
         assert_eq!(e, GwError::Rpc { code: "rate_limited".into(), retry_after_ms: Some(700) });
         assert_eq!(rpc_error(&json!({"code": -32603})).code(), Some("internal"));
     }

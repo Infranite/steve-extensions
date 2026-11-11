@@ -109,17 +109,17 @@ pub async fn open(bridge: &Arc<Bridge>, from: From, subscription: String) -> Rpc
     let tag = cursor_tag(&me);
     let resume = match &from {
         From::Now => None,
-        From::Cursor(c) => Some(
-            parse_cursor(c, &tag)
-                .ok_or_else(|| RpcError::new(Reason::UnknownCursor, "this server did not issue that cursor for this account"))?,
-        ),
+        From::Cursor(c) => Some(parse_cursor(c, &tag).ok_or_else(|| {
+            RpcError::new(Reason::UnknownCursor, "this server did not issue that cursor for this account")
+        })?),
     };
     let settings = &bridge.settings;
     let (changes_tx, changes) = mpsc::channel(4);
-    let conn = match client::connect(&settings.gateway, &settings.gateway_token, &settings.timing, Some(changes_tx)).await {
-        Ok(conn) => conn,
-        Err(e) => return Err(bridge.gw_err(e).await),
-    };
+    let conn =
+        match client::connect(&settings.gateway, &settings.gateway_token, &settings.timing, Some(changes_tx)).await {
+            Ok(conn) => conn,
+            Err(e) => return Err(bridge.gw_err(e).await),
+        };
     // taken before the subscription exists, so nothing created from here on can be missed
     let watermark_ms = now_ms();
     let params = match resume {
@@ -203,7 +203,8 @@ impl Pump {
             tokio::time::sleep(backoff).await;
             backoff = (backoff * 2).min(settings.timing.reconnect_max);
             let (changes_tx, changes) = mpsc::channel(4);
-            let Ok(conn) = client::connect(&settings.gateway, &settings.gateway_token, &settings.timing, Some(changes_tx)).await
+            let Ok(conn) =
+                client::connect(&settings.gateway, &settings.gateway_token, &settings.timing, Some(changes_tx)).await
             else {
                 continue;
             };
@@ -308,7 +309,9 @@ impl Pump {
                 let m = attached.as_ref()?;
                 let edited_ms = m.edited_ms?;
                 let chat = self.bridge.chat_by_internal(&m.chat).await.ok()?;
-                return Some(json!({"type": "message_edited", "chat_id": chat.ext_id, "source_id": m.id, "edited_ms": edited_ms}));
+                return Some(
+                    json!({"type": "message_edited", "chat_id": chat.ext_id, "source_id": m.id, "edited_ms": edited_ms}),
+                );
             }
             _ => {}
         }
@@ -364,7 +367,16 @@ mod tests {
         assert_eq!(parse_cursor(&c, &tag), Some((17, 1_762_430_400_000)));
         assert_eq!(parse_cursor(&c, &cursor_tag(&me("101", "t1"))), None);
         assert_eq!(parse_cursor(&c, &cursor_tag(&me("100", "t2"))), None);
-        for bad in ["", "now", "c:17", "g1:zz:17:5", &format!("g1:{tag}:x:5"), &format!("g1:{tag}:17"), &format!("g1:{tag}:17:5:6"), &format!("g1:{tag}:17:-5")] {
+        for bad in [
+            "",
+            "now",
+            "c:17",
+            "g1:zz:17:5",
+            &format!("g1:{tag}:x:5"),
+            &format!("g1:{tag}:17"),
+            &format!("g1:{tag}:17:5:6"),
+            &format!("g1:{tag}:17:-5"),
+        ] {
             assert_eq!(parse_cursor(bad, &tag), None, "{bad}");
         }
     }

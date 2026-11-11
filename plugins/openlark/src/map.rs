@@ -233,7 +233,8 @@ pub fn meta(m: &Message, cx: &Ctx, mine_hint: bool) -> Value {
 /// `SendResult`. The platform's own message id is not known to the gateway, so `id` is null.
 pub fn message(m: &Message, cx: &Ctx, mine_hint: bool) -> Value {
     let mut v = meta(m, cx, mine_hint);
-    let mut b = if m.recalled { Body { kind: "text", text: String::new(), attachment: None } } else { body(&m.content) };
+    let mut b =
+        if m.recalled { Body { kind: "text", text: String::new(), attachment: None } } else { body(&m.content) };
     let truncated = fit(&mut b.text, MAX_TEXT_BYTES);
     let me_id = cx.me.map(|i| i.user.id.as_str());
     let mentions: Vec<Value> = m
@@ -242,9 +243,11 @@ pub fn message(m: &Message, cx: &Ctx, mine_hint: bool) -> Value {
         .take(256)
         .map(|x| {
             let user = gateway_id(&x.user).then(|| id_handle(&x.user));
-            let name = x.name.as_deref().map(|n| clip(n, 256)).unwrap_or_else(|| {
-                if x.user == "all" { "all".to_string() } else { String::new() }
-            });
+            let name = x
+                .name
+                .as_deref()
+                .map(|n| clip(n, 256))
+                .unwrap_or_else(|| if x.user == "all" { "all".to_string() } else { String::new() });
             json!({"user": user, "name": name, "is_me": me_id == Some(x.user.as_str())})
         })
         .collect();
@@ -267,10 +270,11 @@ pub fn message(m: &Message, cx: &Ctx, mine_hint: bool) -> Value {
 /// whether a person is in the directory; someone of the signed-in user's own tenant is.
 pub fn person(p: &Person, me: Option<&Identity>) -> Value {
     let same_tenant = me.is_some_and(|i| p.user.tenant_id.as_deref() == Some(i.tenant_id.as_str()));
+    let mail = [&p.user.email, &p.user.enterprise_email].into_iter().flatten().find_map(|e| email(e));
     json!({
         "user": id_handle(&p.user.id),
         "display": display(&p.user),
-        "email": [&p.user.email, &p.user.enterprise_email].into_iter().flatten().find_map(|e| email(e)),
+        "email": mail,
         "avatar_url": p.avatar_url.as_deref().filter(|u| u.starts_with("https://") && u.len() <= 2048),
         "title": null,
         "org": null,
@@ -316,14 +320,19 @@ mod tests {
         assert!(hashed.starts_with("lark-h") && hashed.len() == 38);
         assert_ne!(realm(""), realm("Tenant One"));
         for r in [realm("t1"), hashed, realm("")] {
-            assert!(r.len() <= 64 && r.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b)));
+            assert!(
+                r.len() <= 64 && r.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))
+            );
         }
     }
 
     #[test]
     fn a_sender_has_an_id_handle_and_typed_aliases() {
         let s = sender(&user(json!({"id": "9", "name": " Grace ", "kind": "bot", "external": true})), Some(&me()));
-        assert_eq!(s, json!({"id": {"kind": "id", "value": "9"}, "display": "Grace", "is_bot": true, "external": true, "aliases": []}));
+        assert_eq!(
+            s,
+            json!({"id": {"kind": "id", "value": "9"}, "display": "Grace", "is_bot": true, "external": true, "aliases": []})
+        );
         // the own account brings the aliases me.get gave
         let s = sender(&user(json!({"id": "100"})), Some(&me()));
         assert_eq!(
@@ -340,9 +349,11 @@ mod tests {
 
     #[test]
     fn a_text_message_maps_field_by_field() {
-        let m = msg(json!({"id": "501", "chat": "7", "thread": "400", "parent": "450", "sender": {"id": "9", "name": "Grace"},
+        let m = msg(
+            json!({"id": "501", "chat": "7", "thread": "400", "parent": "450", "sender": {"id": "9", "name": "Grace"},
             "created_ms": 1_762_430_401_234_i64, "content": {"type": "text", "text": "hello @Ada"},
-            "mentions": [{"user": "100", "name": "Ada"}, {"user": "all"}]}));
+            "mentions": [{"user": "100", "name": "Ada"}, {"user": "all"}]}),
+        );
         let own = me();
         let chat = group();
         let v = message(&m, &Ctx { me: Some(&own), chat: &chat }, false);
@@ -368,8 +379,12 @@ mod tests {
         let own = me();
         let chat = group();
         let cx = Ctx { me: Some(&own), chat: &chat };
-        let theirs = msg(json!({"id": "1", "chat": "7", "sender": {"id": "9"}, "created_ms": 1, "content": {"type": "text", "text": "x"}}));
-        let mine = msg(json!({"id": "2", "chat": "7", "sender": {"id": "100"}, "created_ms": 1, "content": {"type": "text", "text": "x"}}));
+        let theirs = msg(
+            json!({"id": "1", "chat": "7", "sender": {"id": "9"}, "created_ms": 1, "content": {"type": "text", "text": "x"}}),
+        );
+        let mine = msg(
+            json!({"id": "2", "chat": "7", "sender": {"id": "100"}, "created_ms": 1, "content": {"type": "text", "text": "x"}}),
+        );
         assert_eq!(meta(&theirs, &cx, false)["is_mine"], false);
         assert_eq!(meta(&theirs, &cx, true)["is_mine"], true);
         assert_eq!(meta(&mine, &cx, false)["is_mine"], true);
@@ -380,13 +395,22 @@ mod tests {
         let own = me();
         let chat = group();
         let cx = Ctx { me: Some(&own), chat: &chat };
-        let base = |content: Value| msg(json!({"id": "1", "chat": "7", "sender": {"id": "9"}, "created_ms": 1, "content": content}));
+        let base = |content: Value| {
+            msg(json!({"id": "1", "chat": "7", "sender": {"id": "9"}, "created_ms": 1, "content": content}))
+        };
         let v = message(&base(json!({"type": "post", "title": "Plan", "markdown": "**a**"})), &cx, false);
         assert_eq!((v["kind"].as_str(), v["text"].as_str()), (Some("rich"), Some("Plan\n**a**")));
         let v = message(&base(json!({"type": "image", "ref": "m.7.1.abc", "width": 2, "height": 3})), &cx, false);
         assert_eq!(v["attachments"], json!([{"type": "image", "key": "m.7.1.abc"}]));
-        let v = message(&base(json!({"type": "file", "ref": "m.7.1.abc", "name": "a.pdf", "size": 9, "mime": "application/pdf"})), &cx, false);
-        assert_eq!(v["attachments"], json!([{"type": "file", "key": "m.7.1.abc", "name": "a.pdf", "size": 9, "mime": "application/pdf"}]));
+        let v = message(
+            &base(json!({"type": "file", "ref": "m.7.1.abc", "name": "a.pdf", "size": 9, "mime": "application/pdf"})),
+            &cx,
+            false,
+        );
+        assert_eq!(
+            v["attachments"],
+            json!([{"type": "file", "key": "m.7.1.abc", "name": "a.pdf", "size": 9, "mime": "application/pdf"}])
+        );
         assert_eq!(v["text"], "[file] a.pdf");
         let v = message(&base(json!({"type": "card", "summary": "Approval", "raw": {}})), &cx, false);
         assert_eq!((v["kind"].as_str(), v["text"].as_str()), (Some("rich"), Some("Approval")));
@@ -407,7 +431,9 @@ mod tests {
         assert_eq!((v["recalled"].as_bool(), v["text"].as_str()), (Some(true), Some("")));
         assert_eq!(v["attachments"], json!([]));
         let long = "é".repeat(MAX_TEXT_BYTES);
-        let m = msg(json!({"id": "1", "chat": "7", "sender": {"id": "9"}, "created_ms": 1, "content": {"type": "text", "text": long}}));
+        let m = msg(
+            json!({"id": "1", "chat": "7", "sender": {"id": "9"}, "created_ms": 1, "content": {"type": "text", "text": long}}),
+        );
         let v = message(&m, &cx, false);
         assert_eq!(v["text"].as_str().unwrap().len(), MAX_TEXT_BYTES);
         assert_eq!(v["raw"], json!({"text_truncated": true}));
@@ -415,13 +441,20 @@ mod tests {
 
     #[test]
     fn a_chat_uses_the_shared_id_when_there_is_one() {
-        let c: Chat = serde_json::from_value(json!({"id": "7", "oc": "oc_7", "kind": "group", "name": "Design"})).unwrap();
+        let c: Chat =
+            serde_json::from_value(json!({"id": "7", "oc": "oc_7", "kind": "group", "name": "Design"})).unwrap();
         assert_eq!(shared_chat_id(&c), Some("oc_7"));
         let info = ChatInfo::new(&c, "oc_7".into());
-        assert_eq!(chat(&info), json!({"chat_id": "oc_7", "kind": "group", "name": "Design", "member_count": null, "has_external": null}));
+        assert_eq!(
+            chat(&info),
+            json!({"chat_id": "oc_7", "kind": "group", "name": "Design", "member_count": null, "has_external": null})
+        );
         let p: Chat = serde_json::from_value(json!({"id": "8", "kind": "p2p", "external": true})).unwrap();
         assert_eq!(shared_chat_id(&p), None);
-        assert_eq!(chat(&ChatInfo::new(&p, "8".into())), json!({"chat_id": "8", "kind": "dm", "name": null, "member_count": null, "has_external": true}));
+        assert_eq!(
+            chat(&ChatInfo::new(&p, "8".into())),
+            json!({"chat_id": "8", "kind": "dm", "name": null, "member_count": null, "has_external": true})
+        );
         let odd: Chat = serde_json::from_value(json!({"id": "9", "oc": "9", "kind": "topic"})).unwrap();
         assert_eq!(shared_chat_id(&odd), None);
         assert_eq!(ChatInfo::new(&odd, "9".into()).ext_kind(), Some("channel"));

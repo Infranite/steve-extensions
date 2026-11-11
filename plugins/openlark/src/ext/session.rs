@@ -334,7 +334,9 @@ impl Conn {
         let from = match params.get("from") {
             Some(Value::String(now)) if now == "now" => Some(feed::From::Now),
             Some(Value::Object(from)) => match from.get("cursor").and_then(Value::as_str) {
-                Some(cursor) if !cursor.is_empty() && cursor.len() <= 1024 => Some(feed::From::Cursor(cursor.to_string())),
+                Some(cursor) if !cursor.is_empty() && cursor.len() <= 1024 => {
+                    Some(feed::From::Cursor(cursor.to_string()))
+                }
                 _ => None,
             },
             _ => None,

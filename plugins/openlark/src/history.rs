@@ -124,7 +124,11 @@ impl Bridge {
     pub async fn history(&self, params: &Value) -> Rpc {
         let chat_id = str_param(params, "chat_id")?;
         let time = |key: &str| {
-            params.get(key).and_then(Value::as_i64).filter(|t| *t >= 0).ok_or_else(|| RpcError::invalid(format!("`{key}` is missing")))
+            params
+                .get(key)
+                .and_then(Value::as_i64)
+                .filter(|t| *t >= 0)
+                .ok_or_else(|| RpcError::invalid(format!("`{key}` is missing")))
         };
         let (from_ms, to_ms) = (time("from_ms")?, time("to_ms")?);
         if from_ms > to_ms || to_ms - from_ms > MAX_RANGE_MS {
@@ -147,7 +151,10 @@ impl Bridge {
             None | Some(Value::Null) => None,
             Some(t) => {
                 let token = t.as_str().and_then(Token::parse).ok_or_else(stale)?;
-                let same = token.order == order && token.from_ms == from_ms && token.to_ms == to_ms && token.chat == chat.internal;
+                let same = token.order == order
+                    && token.from_ms == from_ms
+                    && token.to_ms == to_ms
+                    && token.chat == chat.internal;
                 if !same {
                     return Err(stale());
                 }
@@ -199,7 +206,8 @@ impl Bridge {
 
         let identity = self.identity().ok();
         let cx = Ctx { me: identity.as_ref(), chat: &chat };
-        let in_range = page.items.iter().filter(|m| m.chat == chat.internal && (from_ms..to_ms).contains(&m.created_ms));
+        let in_range =
+            page.items.iter().filter(|m| m.chat == chat.internal && (from_ms..to_ms).contains(&m.created_ms));
         let mut messages: Vec<Value> = in_range.map(|m| map::message(m, &cx, false)).collect();
         if order == Order::Desc {
             messages.reverse();
@@ -214,13 +222,29 @@ mod tests {
 
     #[test]
     fn a_token_names_its_read_and_the_gateways_cursor() {
-        let t = Token { order: Order::Asc, from_ms: 10, to_ms: 20, chat: "7".into(), incomplete: true, cursor: "p:12:x".into() };
+        let t = Token {
+            order: Order::Asc,
+            from_ms: 10,
+            to_ms: 20,
+            chat: "7".into(),
+            incomplete: true,
+            cursor: "p:12:x".into(),
+        };
         let s = t.encode();
         assert_eq!(s, "h1:a:10:20:7:1:p:12:x");
         assert_eq!(Token::parse(&s), Some(t));
         let d = Token::parse("h1:d:10:20:7:0:p3").unwrap();
         assert_eq!((d.order, d.incomplete, d.cursor.as_str()), (Order::Desc, false, "p3"));
-        for bad in ["", "p:3", "h2:a:10:20:7:0:p3", "h1:x:10:20:7:0:p3", "h1:a:ten:20:7:0:p3", "h1:a:10:20:7:2:p3", "h1:a:10:20:7:0:", "h1:a:10:20:7:0"] {
+        for bad in [
+            "",
+            "p:3",
+            "h2:a:10:20:7:0:p3",
+            "h1:x:10:20:7:0:p3",
+            "h1:a:ten:20:7:0:p3",
+            "h1:a:10:20:7:2:p3",
+            "h1:a:10:20:7:0:",
+            "h1:a:10:20:7:0",
+        ] {
             assert_eq!(Token::parse(bad), None, "{bad}");
         }
     }

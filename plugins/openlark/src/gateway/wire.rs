@@ -247,7 +247,8 @@ mod tests {
         assert_eq!(c.chat.unwrap().id(), "7");
         assert!(c.mine);
         let c: Change =
-            serde_json::from_value(json!({"seq": 11, "kind": "message", "chat": {"id": "8", "kind": "group"}})).unwrap();
+            serde_json::from_value(json!({"seq": 11, "kind": "message", "chat": {"id": "8", "kind": "group"}}))
+                .unwrap();
         assert_eq!(c.chat.unwrap().id(), "8");
     }
 

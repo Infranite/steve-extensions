@@ -49,13 +49,15 @@ impl Bridge {
     async fn chats_get(&self, params: &Value) -> Rpc {
         let known = self.chat_by_ext(str_param(params, "chat_id")?).await?;
         let chat: Chat = self.gw("chats.get", json!({"chat": known.internal})).await?;
-        Ok(map::chat(&self.remember(&chat).await))
+        let info = self.remember(&chat).await;
+        Ok(map::chat(&info))
     }
 
     /// Bodies by `source_id`, in the order asked; `null` for what cannot be found or seen. The
     /// gateway knows no platform message id, so an item with only `id` is `null` too.
     async fn messages_get(&self, params: &Value) -> Rpc {
-        let items = params.get("items").and_then(Value::as_array).ok_or_else(|| RpcError::invalid("`items` is missing"))?;
+        let items =
+            params.get("items").and_then(Value::as_array).ok_or_else(|| RpcError::invalid("`items` is missing"))?;
         if items.len() > MAX_IDS_PER_CALL {
             return Err(RpcError::invalid("more items than max_ids_per_call"));
         }
@@ -88,7 +90,8 @@ impl Bridge {
     /// Profiles by the `id` handle. The gateway looks people up by its own id only, so any other
     /// handle is `null`.
     async fn people_get(&self, params: &Value) -> Rpc {
-        let users = params.get("users").and_then(Value::as_array).ok_or_else(|| RpcError::invalid("`users` is missing"))?;
+        let users =
+            params.get("users").and_then(Value::as_array).ok_or_else(|| RpcError::invalid("`users` is missing"))?;
         if users.len() > MAX_IDS_PER_CALL {
             return Err(RpcError::invalid("more users than max_ids_per_call"));
         }
@@ -102,7 +105,8 @@ impl Bridge {
         let mut ids: Vec<&str> = wanted.iter().flatten().copied().collect();
         ids.sort_unstable();
         ids.dedup();
-        let found = if ids.is_empty() { People::default() } else { self.gw("people.batch", json!({"users": ids})).await? };
+        let found =
+            if ids.is_empty() { People::default() } else { self.gw("people.batch", json!({"users": ids})).await? };
         let identity = self.identity().ok();
         let people: Vec<Value> = wanted
             .iter()

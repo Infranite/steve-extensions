@@ -71,7 +71,8 @@ pub fn gateway_key(key: &str) -> String {
 }
 
 fn key_ok(k: &str) -> bool {
-    (1..=128).contains(&k.len()) && k.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-'))
+    (1..=128).contains(&k.len())
+        && k.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-'))
 }
 
 /// The Lark reaction for each emoji the Hub sends. These are the ones Steve's own Feishu
@@ -106,7 +107,8 @@ fn account_changed() -> RpcError {
 
 /// The gateway message a `Target` names. Only the `source_id` this server gave addresses one.
 fn target<'a>(params: &'a Value, key: &str) -> Rpc<&'a str> {
-    let t = params.get(key).filter(|t| t.is_object()).ok_or_else(|| RpcError::invalid(format!("`{key}` is missing")))?;
+    let t =
+        params.get(key).filter(|t| t.is_object()).ok_or_else(|| RpcError::invalid(format!("`{key}` is missing")))?;
     let source = t.get("source_id").and_then(Value::as_str);
     let id = t.get("id").and_then(Value::as_str);
     match (source, id) {
@@ -201,7 +203,8 @@ impl Bridge {
         let message = target(params, "target")?;
         let add = method == "reactions.add";
         let key = if add {
-            let emoji = params.get("emoji").and_then(Value::as_str).ok_or_else(|| RpcError::invalid("`emoji` is missing"))?;
+            let emoji =
+                params.get("emoji").and_then(Value::as_str).ok_or_else(|| RpcError::invalid("`emoji` is missing"))?;
             reaction_key(emoji)
                 .ok_or_else(|| RpcError::new(Reason::Unsupported, "no Lark reaction is mapped to this emoji"))?
         } else {
@@ -256,7 +259,9 @@ mod tests {
         assert!(short.starts_with("h:"));
         assert_eq!(short, gateway_key(&long));
         assert_ne!(short, gateway_key(&"k".repeat(66)));
-        assert!(key_ok("h:0123abcd") && key_ok("a.b_c-d:e") && !key_ok("") && !key_ok("a b") && !key_ok(&"k".repeat(129)));
+        assert!(
+            key_ok("h:0123abcd") && key_ok("a.b_c-d:e") && !key_ok("") && !key_ok("a b") && !key_ok(&"k".repeat(129))
+        );
     }
 
     #[test]
