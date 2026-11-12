@@ -1,0 +1,34 @@
+{
+  "id": "openlark",
+  "name": {"en": "Feishu / Lark as you", "zh-CN": "飞书（以你的身份）"},
+  "summary": {
+    "en": "Read and write Feishu / Lark as the signed-in person, not as a bot, through an openlark-gateway you run yourself.",
+    "zh-CN": "通过你自己运行的 openlark-gateway，以登录者本人而不是机器人的身份读写飞书。"
+  },
+  "kind": "channel",
+  "version": "0.1.0",
+  "contract": 1,
+  "entry": "bin/steve-plugin-openlark",
+  "homepage": "https://github.com/Infranite/steve-extensions/tree/main/plugins/openlark",
+  "config": [
+    {
+      "key": "gateway_url",
+      "label": {"en": "Gateway address", "zh-CN": "网关地址"},
+      "hint": {
+        "en": "wss://… or https://…; ws:// and http:// only for a gateway on this machine",
+        "zh-CN": "wss://… 或 https://…；ws:// 和 http:// 只用于本机上的网关"
+      },
+      "required": true
+    },
+    {
+      "key": "gateway_token",
+      "label": {"en": "Gateway credential", "zh-CN": "网关凭据"},
+      "hint": {
+        "en": "Created with `openlark-gateway cred create`; its scopes decide what Steve may do",
+        "zh-CN": "用 `openlark-gateway cred create` 创建；它的权限范围决定 Steve 能做什么"
+      },
+      "secret": true,
+      "required": true
+    }
+  ]
+}
