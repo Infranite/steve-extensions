@@ -16,7 +16,7 @@
         "zh-CN": "通过你自己运行的 openlark-gateway，以登录者本人而不是机器人的身份读写飞书。"
       },
       "kind": "channel",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "contract": 1,
       "entry": "bin/steve-plugin-openlark",
       "homepage": "https://github.com/Infranite/steve-extensions/tree/main/plugins/openlark",
@@ -49,12 +49,12 @@
       ],
       "artifacts": {
         "aarch64-apple-darwin": {
-          "url": "https://github.com/Infranite/steve-extensions/releases/download/openlark-v0.1.1/openlark-0.1.1-aarch64-apple-darwin.tar.gz",
-          "sha256": "93d6fb64440045ce8e5a1b5d7223fc13734fb4dae6ab5820872009fb2f85ba61"
+          "url": "https://github.com/Infranite/steve-extensions/releases/download/openlark-v0.1.2/openlark-0.1.2-aarch64-apple-darwin.tar.gz",
+          "sha256": "b70fec48db50d8c29b75db3c1b79c73e21717a1edb3500c1ad6881d80974bafa"
         },
         "x86_64-unknown-linux-gnu": {
-          "url": "https://github.com/Infranite/steve-extensions/releases/download/openlark-v0.1.1/openlark-0.1.1-x86_64-unknown-linux-gnu.tar.gz",
-          "sha256": "2471635fbadc2a609e16c8e350c67b1a4f74778447fdde5baee2cfac04507c15"
+          "url": "https://github.com/Infranite/steve-extensions/releases/download/openlark-v0.1.2/openlark-0.1.2-x86_64-unknown-linux-gnu.tar.gz",
+          "sha256": "619760a26e2403a53c6ec01970adee3590e72d11379c2eab21f94e4102001ea9"
         }
       }
     }
