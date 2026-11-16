@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::ext::proto::{MAX_TEXT_BYTES, opaque_ok};
 use crate::gateway::link::Identity;
-use crate::gateway::wire::{Chat, Content, Message, Person, User};
+use crate::gateway::wire::{Chat, Content, Message, Person, Profile, User};
 
 /// The handle system Steve's built-in Feishu adapter stores users under: a `union_id`.
 pub const FEISHU_SYSTEM: &str = "feishu";
@@ -187,7 +187,18 @@ fn body(c: &Content) -> Body {
             };
             Body { kind: "rich", text, attachment: attachment("file", c) }
         }
-        "card" => Body { kind: "rich", text: own(&c.summary), attachment: None },
+        // the header title is not part of the card's body; without a body, Lark's digest
+        "card" => {
+            let title = own(&c.title);
+            let body = own(&c.markdown);
+            let text = match (title.is_empty(), body.is_empty()) {
+                (_, true) if !title.is_empty() => title,
+                (_, true) => own(&c.summary),
+                (true, false) => body,
+                (false, false) => format!("{title}\n{body}"),
+            };
+            Body { kind: "rich", text, attachment: None }
+        }
         _ => Body { kind: "unknown", text: own(&c.summary), attachment: None },
     }
 }
@@ -266,9 +277,26 @@ pub fn message(m: &Message, cx: &Ctx, mine_hint: bool) -> Value {
     v
 }
 
-/// One entry of `people.get`. The gateway has no title or organisation, and it does not say
-/// whether a person is in the directory; someone of the signed-in user's own tenant is.
-pub fn person(p: &Person, me: Option<&Identity>) -> Value {
+/// A person's organisation: the first department path of their profile card, top first. The
+/// gateway knows no job title.
+pub fn org(p: &Profile) -> Option<String> {
+    let d = p.departments.as_ref().filter(|d| d.state == "ok")?;
+    let names: Vec<&str> = d
+        .paths
+        .first()?
+        .nodes
+        .iter()
+        .filter_map(|n| n.name.as_deref())
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .collect();
+    (!names.is_empty()).then(|| clip(&names.join(" / "), 256))
+}
+
+/// One entry of `people.get`, with the organisation when the profile card gave one. The gateway
+/// has no job title, and it does not say whether a person is in the directory; someone of the
+/// signed-in user's own tenant is.
+pub fn person(p: &Person, me: Option<&Identity>, org: Option<String>) -> Value {
     let same_tenant = me.is_some_and(|i| p.user.tenant_id.as_deref() == Some(i.tenant_id.as_str()));
     let mail = [&p.user.email, &p.user.enterprise_email].into_iter().flatten().find_map(|e| email(e));
     json!({
@@ -277,7 +305,7 @@ pub fn person(p: &Person, me: Option<&Identity>) -> Value {
         "email": mail,
         "avatar_url": p.avatar_url.as_deref().filter(|u| u.starts_with("https://") && u.len() <= 2048),
         "title": null,
-        "org": null,
+        "org": org,
         "aliases": aliases(&p.user),
         "directory": same_tenant || p.user.external == Some(false),
     })
@@ -412,6 +440,13 @@ mod tests {
             json!([{"type": "file", "key": "m.7.1.abc", "name": "a.pdf", "size": 9, "mime": "application/pdf"}])
         );
         assert_eq!(v["text"], "[file] a.pdf");
+        let card = |c: Value| message(&base(c), &cx, false)["text"].as_str().unwrap().to_string();
+        assert_eq!(
+            card(json!({"type": "card", "title": "Deploy", "markdown": "**done**", "summary": "d"})),
+            "Deploy\n**done**"
+        );
+        assert_eq!(card(json!({"type": "card", "markdown": "**done**", "summary": "d"})), "**done**");
+        assert_eq!(card(json!({"type": "card", "title": "Deploy", "summary": "d"})), "Deploy");
         let v = message(&base(json!({"type": "card", "summary": "Approval", "raw": {}})), &cx, false);
         assert_eq!((v["kind"].as_str(), v["text"].as_str()), (Some("rich"), Some("Approval")));
         let v = message(&base(json!({"type": "other", "summary": "a sticker", "lark_type": "sticker"})), &cx, false);
@@ -465,12 +500,12 @@ mod tests {
         let p: Person = serde_json::from_value(json!({"id": "9", "name": "Grace", "email": "Grace@Example.com",
             "tenant_id": "t1", "avatar_url": "https://cdn.example.com/a.png", "description": "x"}))
         .unwrap();
-        let v = person(&p, Some(&me()));
+        let v = person(&p, Some(&me()), None);
         assert_eq!(v["user"], json!({"kind": "id", "value": "9"}));
         assert_eq!(v["email"], "grace@example.com");
         assert_eq!(v["directory"], true);
         assert_eq!((v["title"].clone(), v["org"].clone()), (Value::Null, Value::Null));
         let p: Person = serde_json::from_value(json!({"id": "9", "tenant_id": "t2", "external": true})).unwrap();
-        assert_eq!(person(&p, Some(&me()))["directory"], false);
+        assert_eq!(person(&p, Some(&me()), None)["directory"], false);
     }
 }

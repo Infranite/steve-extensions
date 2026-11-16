@@ -116,7 +116,8 @@ These are limits of gateway v0 or of this bridge, not settings.
 - **No platform message ids.** Messages are identified by the gateway's own ids. A reply names its parent by that id, which Steve can follow for messages that came through this plugin.
 - **Direct chats, and a group in its first minute, are known by the gateway's chat id**, not by the shared `oc_…` id. A chat keeps the id it was first announced under.
 - **History is read by position, not by time.** The plugin walks back from a chat's newest message to the start of the range asked for, at most 40 pages; a range that lies deeper is answered as incomplete rather than passed off as whole. Replies inside a thread are not part of a chat's history at the gateway.
-- **People are looked up by the gateway's user id only**, not by mail address; title and organisation are not known. Only the signed-in user carries a `union_id`.
+- **People are looked up by the gateway's user id only**, not by mail address. The organisation is the first department path of a person's profile card, when the card shows one; a job title is never known (Lark's profile card has none to give). Only the signed-in user carries a `union_id`.
+- **Cards are read as text:** the header title, then the body as Lark renders it for plain clients. Buttons and other controls are not part of it. Other message types the gateway cannot read yet (system notices, polls, shared events, forwarded bundles…) arrive with a short label such as `[poll]`.
 - **Text only when writing.** No editing, no attachments to upload, no cards; other emoji than the three above are refused.
 - **No read state.**
 - **What the gateway misses, the plugin cannot know.** When the gateway says it discarded changes, the plugin tells Steve which stretch of time to read again. Messages the gateway itself never saw are not reported by anyone.

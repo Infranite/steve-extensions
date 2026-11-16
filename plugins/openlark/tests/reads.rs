@@ -330,7 +330,7 @@ async fn people_are_looked_up_by_the_id_handle() {
         "email": "grace@example.com",
         "avatar_url": "https://cdn.example.com/9.png",
         "title": null,
-        "org": null,
+        "org": "R&D / Design",
         "aliases": [{"kind": "email", "value": "grace@example.com"}],
         "directory": true,
     });
@@ -341,6 +341,8 @@ async fn people_are_looked_up_by_the_id_handle() {
         assert_eq!(people[null], Value::Null, "user {null}");
     }
     assert_eq!((people[3]["display"].as_str(), &people[3]["email"]), (Some("Helper"), &Value::Null));
+    // a profile card that cannot be read leaves the organisation out, not the person
+    assert_eq!(people[3]["org"], Value::Null);
     // one gateway call, each id once
     assert_eq!(rig.fake().w().called("people.batch"), [json!({"users": ["424242", "50", "9"]})]);
     // nothing the gateway can look up: it is not asked

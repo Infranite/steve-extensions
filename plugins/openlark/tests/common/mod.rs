@@ -479,6 +479,16 @@ impl Fake {
                 let missing: Vec<&str> = ids.iter().copied().filter(|id| !w.users.contains_key(*id)).collect();
                 Ok(json!({"people": people, "missing": missing}))
             }
+            // Grace's card names her departments; anyone else's lookup fails
+            "people.get" => {
+                keys(&["user"])?;
+                need(&w, "people.read")?;
+                match p["user"].as_str() {
+                    Some(GRACE) => Ok(json!({"person": w.users[GRACE], "profile": "ok", "departments": {"state": "ok",
+                        "paths": [{"accessible": true, "nodes": [{"id": "1", "name": "R&D"}, {"id": "2", "name": " Design "}]}]}})),
+                    _ => Err(fail("not_found")),
+                }
+            }
             _ => Err(fail("unsupported")),
         }
     }
