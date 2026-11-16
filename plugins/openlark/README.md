@@ -91,7 +91,7 @@ Steve's plugin store starts the plugin and connects it for you. By hand, start t
 - the address `ws://127.0.0.1:<port>/ws`;
 - the token from the token file.
 
-The Hub says hello, asks the plugin who is signed in, and the connection becomes yours. Steve's [deployment guide](https://github.com/Infranite/steve/blob/main/docs/deployment.md#an-external-channel-service) describes the Hub's side.
+The Hub says hello, asks the plugin who is signed in, and the connection becomes yours. The plugin's hello names its platform (`feishu`), so a Hub that knows it lists the connection under 飞书 / Lark, as 代你处理 on your own account; it needs no Feishu bot there and works beside one. An older Hub lists it under 其他聊天工具. Steve's [deployment guide](https://github.com/Infranite/steve/blob/main/docs/deployment.md#an-external-channel-service) describes the Hub's side.
 
 ## What Steve gets
 

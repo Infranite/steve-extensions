@@ -264,6 +264,8 @@ impl Conn {
             "protocol": 1,
             "server": {"name": env!("CARGO_PKG_NAME"), "version": env!("CARGO_PKG_VERSION")},
             "realm": map::realm(&me.tenant_id),
+            // the Hub lists the connection under 飞书 / Lark, beside and independent of any bot (§16)
+            "platform": map::FEISHU_SYSTEM,
             "time_precision_ms": 1,
             "time_ms": now_ms(),
             "features": bridge::features(&st),

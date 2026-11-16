@@ -38,6 +38,7 @@ async fn hello_says_what_this_server_is_and_can_do() {
     assert_eq!(hello["server"]["name"], "steve-plugin-openlark");
     assert!(hello["server"]["version"].is_string());
     assert_eq!(hello["realm"], "lark-t1");
+    assert_eq!(hello["platform"], "feishu", "listed under 飞书 / Lark at the Hub");
     assert_eq!(hello["time_precision_ms"], 1);
     assert!((before..=now_ms()).contains(&hello["time_ms"].as_i64().unwrap()));
     let features = features(&hello);
