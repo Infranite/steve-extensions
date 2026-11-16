@@ -6,7 +6,7 @@
     "zh-CN": "通过你自己运行的 openlark-gateway，以登录者本人而不是机器人的身份读写飞书。"
   },
   "kind": "channel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "contract": 1,
   "entry": "bin/steve-plugin-openlark",
   "homepage": "https://github.com/Infranite/steve-extensions/tree/main/plugins/openlark",

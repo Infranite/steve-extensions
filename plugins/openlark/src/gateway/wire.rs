@@ -116,6 +116,33 @@ pub struct Content {
     pub summary: Option<String>,
 }
 
+/// `people.get`: one person's profile card, of which the bridge reads the departments.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Profile {
+    #[serde(default)]
+    pub departments: Option<Departments>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Departments {
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub paths: Vec<DepartmentPath>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct DepartmentPath {
+    #[serde(default)]
+    pub nodes: Vec<DepartmentNode>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct DepartmentNode {
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Message {
     pub id: String,

@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use crate::bridge::{self, Bridge};
 use crate::ext::proto::{MAX_IDS_PER_CALL, Reason, Rpc, RpcError, str_param};
-use crate::gateway::wire::{Chat, Message, People};
+use crate::gateway::wire::{Chat, Message, People, Profile};
 use crate::map::{self, Ctx};
 
 /// Gateway reads of one `messages.get` that run at once.
@@ -88,7 +88,8 @@ impl Bridge {
     }
 
     /// Profiles by the `id` handle. The gateway looks people up by its own id only, so any other
-    /// handle is `null`.
+    /// handle is `null`. Names and mail come in one batch; each person's organisation comes from
+    /// their profile card, read alongside, and is left out when that read fails.
     async fn people_get(&self, params: &Value) -> Rpc {
         let users =
             params.get("users").and_then(Value::as_array).ok_or_else(|| RpcError::invalid("`users` is missing"))?;
@@ -107,12 +108,23 @@ impl Bridge {
         ids.dedup();
         let found =
             if ids.is_empty() { People::default() } else { self.gw("people.batch", json!({"users": ids})).await? };
+        let found_ids: Vec<String> =
+            ids.iter().filter(|id| found.people.iter().any(|p| p.user.id == **id)).map(|id| id.to_string()).collect();
+        let orgs: Vec<(String, Option<String>)> = futures::stream::iter(found_ids)
+            .map(|id| async move {
+                let profile = self.gw::<Profile>("people.get", json!({"user": id})).await.ok();
+                (id, profile.as_ref().and_then(map::org))
+            })
+            .buffered(GET_PARALLEL)
+            .collect()
+            .await;
         let identity = self.identity().ok();
         let people: Vec<Value> = wanted
             .iter()
             .map(|id| {
                 let person = id.and_then(|id| found.people.iter().find(|p| p.user.id == id));
-                person.map_or(Value::Null, |p| map::person(p, identity.as_ref()))
+                let org = id.and_then(|id| orgs.iter().find(|(o, _)| o == id)).and_then(|(_, org)| org.clone());
+                person.map_or(Value::Null, |p| map::person(p, identity.as_ref(), org))
             })
             .collect();
         Ok(json!({"people": people, "missing_permissions": []}))
