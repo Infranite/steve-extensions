@@ -46,6 +46,7 @@ jobs:
         with:
           toolchain: 1.99.1
           targets: ${{ matrix.platform.target }}
+          components: clippy, rustfmt
       - name: Test
         shell: bash
         run: if [ -x "plugins/${{ matrix.plugin }}/test.sh" ]; then cd "plugins/${{ matrix.plugin }}" && ./test.sh; fi
