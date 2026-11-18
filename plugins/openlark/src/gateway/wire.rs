@@ -60,6 +60,9 @@ pub struct HelloResult {
     pub scopes: Vec<String>,
     #[serde(default)]
     pub features: Vec<String>,
+    /// The gateway's target policy: `self`, `allowlist` or `open`. Older gateways omit it.
+    #[serde(default)]
+    pub write_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

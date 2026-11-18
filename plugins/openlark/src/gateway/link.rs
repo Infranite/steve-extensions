@@ -77,6 +77,15 @@ impl LinkState {
     pub fn has_scope(&self, s: &str) -> bool {
         self.scopes.iter().any(|x| x == s)
     }
+
+    /// Only a live, usable connection can vouch for the gateway's current target policy.
+    /// It belongs to that connection's hello, never to the cached features and scopes.
+    pub fn write_mode(&self) -> Option<&str> {
+        match (self.status, self.session, &self.conn) {
+            (LinkStatus::Up, Session::Ok, Some(conn)) => conn.hello.write_mode.as_deref(),
+            _ => None,
+        }
+    }
 }
 
 /// What survives a restart, so that hello can answer while the gateway is away.

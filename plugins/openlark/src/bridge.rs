@@ -251,28 +251,33 @@ pub fn features(st: &LinkState) -> Vec<&'static str> {
     if has("media.v1", "messages.read") {
         out.push("media.download");
     }
-    if has("im.v1", "messages.send") {
-        out.extend(["messages.send", "messages.reply"]);
-    }
-    if has("recall.v1", "messages.recall") {
-        out.push("messages.recall");
-    }
-    if has("im.v1", "reactions.write") {
-        out.push("reactions");
-    }
+    out.extend(write_features(st));
     if has("org.v1", "people.read") {
         out.push("people.get");
     }
     out
 }
 
+/// The write methods advertised to the Hub, gated by both gateway support and credential scope.
+fn write_features(st: &LinkState) -> impl Iterator<Item = &'static str> + '_ {
+    const REQUIREMENTS: &[(&str, &str, &[&str])] = &[
+        ("im.v1", "messages.send", &["messages.send", "messages.reply"]),
+        ("recall.v1", "messages.recall", &["messages.recall"]),
+        ("im.v1", "reactions.write", &["reactions"]),
+    ];
+    REQUIREMENTS
+        .iter()
+        .filter(|(feature, scope, _)| st.has_feature(feature) && st.has_scope(scope))
+        .flat_map(|(_, _, methods)| methods.iter().copied())
+}
+
 /// What the Hub is told about the session: `(status, reason, write_policy)`.
-///
-/// The gateway does not say which targets its write policy allows, only refuses one by one, so
-/// a credential that may write at all is `restricted`.
 pub fn session_status(st: &LinkState) -> (&'static str, Option<&'static str>, &'static str) {
-    let writes = ["messages.send", "messages.recall", "reactions.write"].iter().any(|s| st.has_scope(s));
-    let policy = if writes { "restricted" } else { "forbidden" };
+    let policy = match (write_features(st).next(), st.write_mode()) {
+        (None, _) => "forbidden",
+        (Some(_), Some("open")) => "allowed",
+        (Some(_), _) => "restricted",
+    };
     match (st.status, st.session) {
         (LinkStatus::Refused, _) => ("expired", Some("the openlark gateway refuses the plugin's credential"), policy),
         (_, Session::Expired) => ("expired", Some("the Lark session has expired at the gateway"), policy),

@@ -84,6 +84,8 @@ pub struct World {
     pub tenant: String,
     pub scopes: Vec<String>,
     pub features: Vec<String>,
+    /// `None` models a gateway that omits the mode from hello.
+    pub write_mode: Option<String>,
     pub push_connected: bool,
     pub users: BTreeMap<String, Value>,
     pub chats: BTreeMap<String, Value>,
@@ -146,6 +148,7 @@ impl World {
                 "people.read",
             ]),
             features: all(&["changes.v1", "im.v1", "recall.v1", "media.v1", "org.v1", "push_status.v1"]),
+            write_mode: None,
             push_connected: true,
             users,
             chats,
@@ -280,8 +283,12 @@ impl Fake {
             if w.hello_user {
                 account["user"] = w.sender(&w.me);
             }
-            return Ok(json!({"protocol": "openlark/0", "gateway": {"name": "fake-gateway", "version": "0"},
-                "account": account, "scopes": w.scopes, "features": w.features, "limits": {}}));
+            let mut hello = json!({"protocol": "openlark/0", "gateway": {"name": "fake-gateway", "version": "0"},
+                "account": account, "scopes": w.scopes, "features": w.features, "limits": {}});
+            if let Some(mode) = &w.write_mode {
+                hello["write_mode"] = json!(mode);
+            }
+            return Ok(hello);
         }
         if !conn.hello {
             return Err(invalid());

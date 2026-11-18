@@ -10,7 +10,7 @@ One process bridges one gateway credential, which is one signed-in user. The plu
 ## What it needs
 
 - An openlark-gateway that you run and have signed in to, reachable from the machine the plugin runs on. The plugin builds and is tested without one; it only needs one to do anything useful.
-- A credential of that gateway (`openlark-gateway cred create`). What the credential may do decides what Steve can do, see [What Steve gets](#what-steve-gets).
+- A credential of that gateway (`openlark-gateway cred create`). Its scopes control which operations Steve can request; the gateway's separate write policy controls which targets those requests may affect. See [What Steve gets](#what-steve-gets).
 - A Rust toolchain (1.99 or later) to build it.
 
 ## Build
@@ -78,7 +78,7 @@ Without that setting standard input is ignored. A plugin started by hand, under 
 
 The data directory holds three small files, none with a secret:
 
-- `state.json`: who is signed in and what the credential offers, so that the plugin can answer the Hub's hello after a restart while the gateway is away;
+- `state.json`: who is signed in and what the credential offers, so that the plugin can answer the Hub's hello after a restart while the gateway is away. The gateway's write mode is never cached.
 - `chats.json`: the id each chat was first announced under, so that a chat keeps one id for good;
 - `idempotency.json`: the results of the writes of the last 48 hours, so that a write the Hub retries is not sent twice, also across a restart.
 
@@ -106,7 +106,20 @@ The plugin announces only what the gateway and the credential can really serve.
 | `reactions.write` | add and remove the three reactions Steve uses for its own state: 👀, ✅ and ❌ |
 | `people.read` | look up a person's name, mail address and avatar |
 
-A credential with none of the three write scopes makes the connection read-only. With any of them, the gateway's own write policy still decides chat by chat; a chat it refuses is reported to Steve as forbidden for that write.
+A write method is advertised only when the gateway advertises its supporting feature and the credential has the matching scope. The Hub sees `forbidden` when no write method is advertised, and `allowed` only when at least one is advertised and the connected gateway has a usable Lark session and explicitly reports `write_mode: "open"` in `hello`. With write methods but no such confirmation, the Hub sees `restricted`: this includes `self` (the gateway default), `allowlist`, a missing or unknown mode, a disconnected gateway, and an expired or locked session. If the gateway refuses a particular target, the plugin still reports `target_forbidden` to Steve.
+
+### Configure write targets at the gateway
+
+To deliberately remove the gateway's target restrictions, edit the configuration used by the **gateway** (by default `gateway.toml` in its data directory), not the plugin or the Steve Hub:
+
+```toml
+[safety]
+writes = "open"
+```
+
+If switching from `allowlist`, remove `chats` from the same section. Restart the gateway and reconnect so its new `hello` can report the effective mode. Prefer `self` (writes affecting only the signed-in user) or `allowlist` (which also permits writes in configured chats) when those modes suffice.
+
+This setting applies to every credential on that gateway, but does not grant any scopes: a read-only credential remains read-only. Lark's permissions and method-specific checks still apply. Steve Hub permissions and approvals are separate; Hub settings cannot override the gateway's scopes or target policy, and setting `open` does not bypass Hub checks.
 
 ## What is not supported
 
