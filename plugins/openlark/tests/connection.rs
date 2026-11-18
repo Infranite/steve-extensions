@@ -109,6 +109,44 @@ async fn features_follow_the_gateway_and_the_credential() {
     hub.call("chats.get", json!({"chat_id": GROUP_OC})).await.unwrap();
 }
 
+#[tokio::test]
+async fn write_policy_requires_an_advertised_write_and_an_explicit_open_mode() {
+    const WRITE_FEATURES: &[&str] = &["messages.send", "messages.reply", "messages.recall", "reactions"];
+    for (feature, scope, advertised) in [
+        ("im.v1", "messages.send", &["messages.send", "messages.reply"][..]),
+        ("recall.v1", "messages.recall", &["messages.recall"][..]),
+        ("im.v1", "reactions.write", &["reactions"][..]),
+    ] {
+        for (mode, enabled_policy) in [
+            (None, "restricted"),
+            (Some("future_mode"), "restricted"),
+            (Some("self"), "restricted"),
+            (Some("allowlist"), "restricted"),
+            (Some("open"), "allowed"),
+        ] {
+            for (supports_feature, has_scope) in [(false, false), (false, true), (true, false), (true, true)] {
+                let mut rig = Rig::with(|w| {
+                    w.features = Vec::from_iter(supports_feature.then(|| feature.to_string()));
+                    w.scopes = Vec::from_iter(has_scope.then(|| scope.to_string()));
+                    w.write_mode = mode.map(str::to_string);
+                })
+                .await;
+                let mut hub = Hub::connect(rig.addr, "/ws", Some(HUB_TOKEN)).await.unwrap();
+                let hello = hub.hello().await.unwrap();
+                let writes: Vec<_> = features(&hello).into_iter().filter(|f| WRITE_FEATURES.contains(f)).collect();
+                let (expected_writes, expected_policy) =
+                    if supports_feature && has_scope { (advertised, enabled_policy) } else { (&[][..], "forbidden") };
+                let case = format!("{feature}={supports_feature} {scope}={has_scope} mode={mode:?}");
+                assert_eq!(writes, expected_writes, "{case}");
+                assert_eq!(hello["write_policy"], expected_policy, "{case}");
+                drop(hub);
+                rig.stop_bridge().await;
+                rig.gw.stop().await;
+            }
+        }
+    }
+}
+
 /// V3.
 #[tokio::test]
 async fn a_request_before_hello_is_refused_and_the_socket_closed() {
@@ -205,8 +243,9 @@ async fn a_silent_hub_is_dropped_and_a_pinging_one_is_kept() {
 /// V13: the session's state arrives as it changes, and requests fail by it meanwhile.
 #[tokio::test]
 async fn an_expired_or_locked_session_is_told_and_then_its_return() {
-    let rig = Rig::start().await;
-    let mut hub = rig.hub().await;
+    let rig = Rig::with(|w| w.write_mode = Some("open".into())).await;
+    let mut hub = Hub::connect(rig.addr, "/ws", Some(HUB_TOKEN)).await.unwrap();
+    assert_eq!(hub.hello().await.unwrap()["write_policy"], "allowed");
     let send = |key: &str| json!({"chat_id": GROUP_OC, "text": "hello", "idempotency_key": key, "expected_sender": id_handle(ME)});
 
     rig.fake().w().session = "expired".into();
@@ -223,14 +262,17 @@ async fn an_expired_or_locked_session_is_told_and_then_its_return() {
     let hello = second.hello().await.unwrap();
     assert_eq!(hello["session"]["status"], "expired");
     assert!(hello["session"]["reason"].is_string());
+    assert_eq!(hello["write_policy"], "restricted");
 
     rig.fake().w().session = "locked".into();
-    assert_eq!(hub.note("session.status").await["status"], "locked");
+    let told = hub.note("session.status").await;
+    assert_eq!(told["status"], "locked");
+    assert_eq!(told["write_policy"], "restricted");
     assert_eq!(reason(&hub.call("messages.send", send("k1")).await.unwrap_err()), "session_locked");
 
     rig.fake().w().session = "ok".into();
     let told = hub.note("session.status").await;
-    assert_eq!(told, json!({"status": "ok", "write_policy": "restricted"}));
+    assert_eq!(told, json!({"status": "ok", "write_policy": "allowed"}));
     assert_eq!(second.note("session.status").await["status"], "locked");
     assert_eq!(second.note("session.status").await["status"], "ok");
     hub.call("messages.send", send("k1")).await.unwrap();
@@ -300,6 +342,61 @@ async fn a_gateway_that_goes_away_is_reported_and_so_is_its_return() {
 }
 
 #[tokio::test]
+async fn reconnect_replaces_write_mode_even_if_the_new_hello_omits_it() {
+    let mut rig = Rig::with(|w| w.write_mode = Some("self".into())).await;
+    let mut hub = Hub::connect(rig.addr, "/ws", Some(HUB_TOKEN)).await.unwrap();
+    assert_eq!(hub.hello().await.unwrap()["write_policy"], "restricted");
+
+    let mut previous_policy = "restricted";
+    for (mode, policy) in
+        [(Some("open"), "allowed"), (None, "restricted"), (Some("open"), "allowed"), (Some("allowlist"), "restricted")]
+    {
+        rig.gw.stop().await;
+        assert_eq!(hub.note("push.status").await["status"], "down");
+        if previous_policy == "allowed" {
+            assert_eq!(hub.note("session.status").await, json!({"status": "ok", "write_policy": "restricted"}));
+        }
+        rig.fake().w().write_mode = mode.map(str::to_string);
+        rig.gw.restart().await;
+        assert_eq!(hub.note("push.status").await["status"], "ok");
+        if policy == "allowed" {
+            assert_eq!(hub.note("session.status").await, json!({"status": "ok", "write_policy": "allowed"}));
+        } else {
+            assert!(!hub.gets("session.status", Duration::from_millis(10)).await, "{mode:?}");
+        }
+        let mut second = Hub::connect(rig.addr, "/ws", Some(HUB_TOKEN)).await.unwrap();
+        assert_eq!(second.hello().await.unwrap()["write_policy"], policy, "{mode:?}");
+        previous_policy = policy;
+    }
+}
+
+#[tokio::test]
+async fn a_cached_account_does_not_restore_allowed_policy() {
+    let mut rig = Rig::with(|w| w.write_mode = Some("open".into())).await;
+    let mut hub = Hub::connect(rig.addr, "/ws", Some(HUB_TOKEN)).await.unwrap();
+    assert_eq!(hub.hello().await.unwrap()["write_policy"], "allowed");
+    drop(hub);
+    rig.stop_bridge().await;
+    rig.gw.stop().await;
+
+    let path = rig.data.path().join("state.json");
+    let mut cached: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert!(cached.get("write_mode").is_none());
+    assert!(cached.get("write_policy").is_none());
+    cached["write_mode"] = json!("open");
+    cached["write_policy"] = json!("allowed");
+    std::fs::write(path, serde_json::to_vec(&cached).unwrap()).unwrap();
+
+    rig.start_bridge().await;
+    let mut hub = Hub::connect(rig.addr, "/ws", Some(HUB_TOKEN)).await.unwrap();
+    let hello = hub.hello().await.unwrap();
+    assert_eq!(hello["upstream"]["status"], "down");
+    assert_eq!(hello["realm"], "lark-t1");
+    assert!(features(&hello).contains(&"messages.send"));
+    assert_eq!(hello["write_policy"], "restricted");
+}
+
+#[tokio::test]
 async fn the_gateways_own_push_connection_is_the_upstream_too() {
     let rig = Rig::start().await;
     let mut hub = rig.hub().await;
@@ -353,11 +450,13 @@ async fn hello_waits_for_the_account_and_gives_up_without_one() {
 /// without restarting anything.
 #[tokio::test]
 async fn a_refused_credential_is_reported_as_the_session() {
-    let rig = Rig::start().await;
-    let mut hub = rig.hub().await;
+    let rig = Rig::with(|w| w.write_mode = Some("open".into())).await;
+    let mut hub = Hub::connect(rig.addr, "/ws", Some(HUB_TOKEN)).await.unwrap();
+    assert_eq!(hub.hello().await.unwrap()["write_policy"], "allowed");
     rig.fake().revoke();
     let told = hub.note("session.status").await;
     assert_eq!(told["status"], "expired");
+    assert_eq!(told["write_policy"], "restricted");
     assert!(told["reason"].as_str().unwrap().contains("credential"));
     assert_eq!(hub.note("push.status").await["status"], "down");
     let refused = hub.call("chats.get", json!({"chat_id": GROUP_OC})).await.unwrap_err();
@@ -367,7 +466,7 @@ async fn a_refused_credential_is_reported_as_the_session() {
     assert_eq!(second.hello().await.unwrap()["session"]["status"], "expired");
 
     rig.fake().w().revoked = false;
-    assert_eq!(hub.note("session.status").await["status"], "ok");
+    assert_eq!(hub.note("session.status").await, json!({"status": "ok", "write_policy": "allowed"}));
     assert_eq!(hub.note("push.status").await["status"], "ok");
     hub.call("chats.get", json!({"chat_id": GROUP_OC})).await.unwrap();
 }
