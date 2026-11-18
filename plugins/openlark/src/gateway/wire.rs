@@ -209,6 +209,10 @@ pub struct Change {
     pub op: Option<String>,
     #[serde(default)]
     pub message: Option<Value>,
+    /// One immutable reaction action when `reaction_changes.v1` is offered. Keep it raw so that
+    /// malformed details do not erase the journal position during envelope decoding.
+    #[serde(default)]
+    pub reaction: Option<Value>,
     #[serde(default)]
     pub message_id: Option<String>,
     #[serde(default)]
@@ -223,6 +227,45 @@ pub struct Change {
     /// A `gap` covers the positions `from..=to` of `chats` (all chats when empty).
     #[serde(default)]
     pub chats: Vec<String>,
+}
+
+/// Optional gateway contract. Account identity alone is not reaction provenance.
+pub const REACTION_CHANGES: &str = "reaction_changes.v1";
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReactionOrigin {
+    Manual,
+    Automated,
+    #[default]
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReactionAction {
+    Created,
+    Removed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReactionTimeSource {
+    Provider,
+    Observed,
+}
+
+/// Action metadata from the gateway journal, never a reaction set fetched at replay time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Reaction {
+    pub actor: User,
+    pub emoji: String,
+    pub change: ReactionAction,
+    pub action_ms: i64,
+    #[serde(default)]
+    pub origin: ReactionOrigin,
+    pub time_source: ReactionTimeSource,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize)]

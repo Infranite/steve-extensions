@@ -247,6 +247,9 @@ pub fn features(st: &LinkState) -> Vec<&'static str> {
     }
     if has("changes.v1", "messages.read") {
         out.extend(["changes", "changes.inline_body"]);
+        if st.has_feature(crate::gateway::wire::REACTION_CHANGES) {
+            out.push("changes.reactions");
+        }
     }
     if has("media.v1", "messages.read") {
         out.push("media.download");
