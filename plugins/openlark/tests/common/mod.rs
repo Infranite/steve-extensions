@@ -81,6 +81,10 @@ pub struct World {
     /// Whether hello names the signed-in user.
     pub hello_user: bool,
     pub me: String,
+    /// A scripted identity on the independent change-feed socket only.
+    pub feed_me: Option<String>,
+    /// A scripted capability on the independent feed socket only.
+    pub feed_reactions: Option<bool>,
     pub tenant: String,
     pub scopes: Vec<String>,
     pub features: Vec<String>,
@@ -136,6 +140,8 @@ impl World {
             session: "ok".into(),
             hello_user: true,
             me: ME.into(),
+            feed_me: None,
+            feed_reactions: None,
             tenant: TENANT.into(),
             scopes: all(&[
                 "chats.read",
@@ -280,8 +286,17 @@ impl Fake {
             if w.hello_user {
                 account["user"] = w.sender(&w.me);
             }
+            let mut features = w.features.clone();
+            if conn.changes
+                && let Some(reactions) = w.feed_reactions
+            {
+                features.retain(|f| f != "reaction_changes.v1");
+                if reactions {
+                    features.push("reaction_changes.v1".into());
+                }
+            }
             return Ok(json!({"protocol": "openlark/0", "gateway": {"name": "fake-gateway", "version": "0"},
-                "account": account, "scopes": w.scopes, "features": w.features, "limits": {}}));
+                "account": account, "scopes": w.scopes, "features": features, "limits": {}}));
         }
         if !conn.hello {
             return Err(invalid());
@@ -321,7 +336,8 @@ impl Fake {
         match method {
             "me.get" => {
                 keys(&[])?;
-                Ok(json!({"user": w.users[&w.me], "tenant": {"id": w.tenant}}))
+                let me = if conn.changes { w.feed_me.as_deref().unwrap_or(&w.me) } else { &w.me };
+                Ok(json!({"user": w.users[me], "tenant": {"id": w.tenant}}))
             }
             "chats.get" => {
                 keys(&["chat"])?;

@@ -14,6 +14,7 @@ pub mod gateway;
 pub mod history;
 pub mod map;
 pub mod media;
+pub mod reactions;
 pub mod reads;
 pub mod store;
 pub mod writes;

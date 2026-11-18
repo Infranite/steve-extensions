@@ -100,13 +100,30 @@ The plugin announces only what the gateway and the credential can really serve.
 | Credential scope | Steve can |
 |---|---|
 | `chats.read` | look up a chat's kind and name |
-| `messages.read` | receive new messages, edits and recalls as they happen; read a message by id; read a chat's history over a stretch of time; download attachments |
+| `messages.read` | receive new messages, edits and recalls as they happen; receive immutable reaction actions when the gateway offers `reaction_changes.v1`; read a message by id; read a chat's history over a stretch of time; download attachments |
 | `messages.send` | send and reply as you, with mentions |
 | `messages.recall` | recall a message you sent |
 | `reactions.write` | add and remove the three reactions Steve uses for its own state: 👀, ✅ and ❌ |
 | `people.read` | look up a person's name, mail address and avatar |
 
 A credential with none of the three write scopes makes the connection read-only. With any of them, the gateway's own write policy still decides chat by chat; a chat it refuses is reported to Steve as forbidden for that write.
+
+### Incoming reactions
+
+The gateway owns Lark push decoding, immutable reaction history and source attribution. The plugin translates that public wire contract into Steve's external-channel events; no gateway crate or private implementation is linked or copied into the plugin or Hub.
+
+A gateway that offers `reaction_changes.v1`, `changes.v1` and `messages.read` may deliver a journal change with `kind: reaction`, the target `message_id` and `chat`, and one `reaction` action:
+
+```json
+{"actor":{"id":"100"},"emoji":"THUMBSUP","change":"created",
+ "action_ms":1762430401234,"origin":"unknown","time_source":"provider"}
+```
+
+`change` is `created` or `removed`, `origin` is `manual`, `automated` or `unknown`, and `time_source` is `provider` or `observed`. The gateway fixes the timestamp when journaling: the bridge never replaces it with its current clock or reads today's reaction set to invent old changes. Manual attribution must be affirmative upstream evidence; being the signed-in user, having no bot marker, or not matching a write made by this plugin is insufficient. Missing or future origin values stay unknown; known bot/app actors are always automated.
+
+The plugin subscribes to message and reaction changes only under that capability, and announces `changes.reactions` to Steve separately from the existing `reactions` **write** capability. Each action becomes a `type: reaction` item naming the target through `source_id`; `revision` is that action's own journal `seq`, so remove and re-add in the same millisecond remain distinct. Actor aliases, the chat's announced id, source, time and time source are preserved. A new action on an older message is not discarded because the target message is old.
+
+Older gateways keep normal message delivery without claiming incoming reaction coverage. Old retained metadata-only reaction entries are skipped explicitly, without reconstruction. A typed action with missing or malformed required details ends the feed without acknowledging that action; fix or upgrade the upstream rather than silently losing it. A change of account or reaction capability requires a new handshake. Existing account-scoped cursors, unchanged unacknowledged-batch redelivery and gateway acknowledgements are used for replay and restart; the plugin does not maintain a second reaction-state database.
 
 ## What is not supported
 
@@ -130,3 +147,5 @@ cargo clippy --all-targets
 ```
 
 The tests need no gateway and no network: they start the bridge against a fake gateway inside the test process (`tests/common/mod.rs`) and drive it the way the Hub does, through the conformance checklist and test vectors of the external channel protocol. `tests/process.rs` starts the real binary for the run contract above.
+
+For a manual process check, `cargo run --example reaction_gateway` starts a controlled gateway and HTTP controls on random loopback ports, and prints paths to synthetic token/config/data files. Start the real `steve-plugin-openlark` binary with those paths and `--listen 127.0.0.1:0`, then run `reaction_watch <plugin ws URL> <token file>` to observe and acknowledge its actual feed. The gateway's `/message`, `/reaction` and `/disconnect` HTTP controls operate only fixture data; `/state` shows its journal and acknowledgements. Passing a previously printed cursor as the watcher's third argument exercises resumption after restarting the plugin with the same data. These examples never sign in or connect to Lark or an installed Steve service.

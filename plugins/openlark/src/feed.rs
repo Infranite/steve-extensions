@@ -16,7 +16,7 @@ use crate::bridge::Bridge;
 use crate::ext::proto::{MAX_BATCH_ITEMS, Reason, Rpc, RpcError, notification, now_ms};
 use crate::gateway::client::{self, GwConn, GwError};
 use crate::gateway::link::Identity;
-use crate::gateway::wire::{Change, Message, Subscribed};
+use crate::gateway::wire::{Change, HelloResult, Me, Message, REACTION_CHANGES, Subscribed};
 use crate::map::{self, Ctx, sha256_hex};
 
 /// The bytes of items one batch may carry, well inside the 1 MiB frame.
@@ -100,7 +100,22 @@ fn pruned(after: u64, sub: &Subscribed) -> bool {
     after < sub.head && after + 1 < first_kept
 }
 
-const KINDS: [&str; 1] = ["message"];
+fn reaction_changes(hello: &HelloResult) -> bool {
+    hello.features.iter().any(|f| f == REACTION_CHANGES)
+        && hello.features.iter().any(|f| f == "changes.v1")
+        && hello.scopes.iter().any(|s| s == "messages.read")
+}
+
+fn kinds(reactions: bool) -> Vec<&'static str> {
+    if reactions { vec!["message", "reaction"] } else { vec!["message"] }
+}
+
+/// A feed has its own socket. Its account is checked before subscribing, including after reconnect;
+/// a standing link's later health poll is not an identity check for this socket.
+async fn same_account(conn: &GwConn, me: &Identity) -> Result<bool, GwError> {
+    let now: Me = conn.call("me.get", json!({})).await?;
+    Ok(now.user.id == me.user.id && now.tenant.id == me.tenant_id)
+}
 
 /// Opens a subscription: its own gateway connection, subscribed at the journal's head or after
 /// the cursor's position.
@@ -120,11 +135,21 @@ pub async fn open(bridge: &Arc<Bridge>, from: From, subscription: String) -> Rpc
             Ok(conn) => conn,
             Err(e) => return Err(bridge.gw_err(e).await),
         };
+    match same_account(&conn, &me).await {
+        Ok(true) => {}
+        Ok(false) => return Err(RpcError::new(Reason::AccountChanged, "another user is signed in at the gateway")),
+        Err(e) => return Err(bridge.gw_err(e).await),
+    }
+    let reactions = reaction_changes(&conn.hello);
+    let announced_reactions = crate::bridge::features(&bridge.link.state()).contains(&"changes.reactions");
+    if reactions != announced_reactions {
+        return Err(RpcError::new(Reason::UpstreamUnavailable, "the gateway reaction capability changed; reconnect"));
+    }
     // taken before the subscription exists, so nothing created from here on can be missed
     let watermark_ms = now_ms();
     let params = match resume {
-        None => json!({"from_head": true, "kinds": KINDS}),
-        Some((seq, _)) => json!({"after": seq, "kinds": KINDS}),
+        None => json!({"from_head": true, "kinds": kinds(reactions)}),
+        Some((seq, _)) => json!({"after": seq, "kinds": kinds(reactions)}),
     };
     let sub: Subscribed = match conn.call("changes.subscribe", params).await {
         Ok(sub) => sub,
@@ -150,6 +175,7 @@ pub async fn open(bridge: &Arc<Bridge>, from: From, subscription: String) -> Rpc
         last_seq: after,
         whole_at_ms: resume.map_or(watermark_ms, |(_, at_ms)| at_ms.min(watermark_ms)),
         watermark_ms: resume.is_none().then_some(watermark_ms),
+        reactions,
         conn: conn.clone(),
     };
     let task = tokio::spawn(pump.run(changes, events_tx));
@@ -167,6 +193,8 @@ struct Pump {
     whole_at_ms: i64,
     /// Set for a subscription from "now": older messages are history, not news (§5.1).
     watermark_ms: Option<i64>,
+    /// This subscription negotiated immutable reaction actions, rather than old metadata notices.
+    reactions: bool,
     conn: Arc<Mutex<Arc<GwConn>>>,
 }
 
@@ -175,7 +203,11 @@ impl Pump {
         loop {
             match changes.recv().await {
                 Some(batch) => {
-                    for batch in self.convert(batch).await {
+                    let Ok(batches) = self.convert(batch).await else {
+                        let _ = events.send(Event::Reset).await;
+                        return;
+                    };
+                    for batch in batches {
                         if events.send(Event::Batch(batch)).await.is_err() {
                             return;
                         }
@@ -208,7 +240,20 @@ impl Pump {
             else {
                 continue;
             };
-            match conn.call::<Subscribed>("changes.subscribe", json!({"after": self.last_seq, "kinds": KINDS})).await {
+            if !matches!(same_account(&conn, &self.me).await, Ok(true)) {
+                return None;
+            }
+            if reaction_changes(&conn.hello) != self.reactions {
+                // The Hub must hear a new hello before a different coverage promise is used.
+                return None;
+            }
+            match conn
+                .call::<Subscribed>(
+                    "changes.subscribe",
+                    json!({"after": self.last_seq, "kinds": kinds(self.reactions)}),
+                )
+                .await
+            {
                 // what the gateway discarded meanwhile arrives as its own gap change
                 Ok(_) => {
                     *self.conn.lock().unwrap_or_else(|e| e.into_inner()) = Arc::new(conn);
@@ -221,7 +266,7 @@ impl Pump {
     }
 
     /// Turns one gateway batch into one or more of the Hub's, in order.
-    async fn convert(&mut self, changes: Vec<Change>) -> Vec<Batch> {
+    async fn convert(&mut self, changes: Vec<Change>) -> Result<Vec<Batch>, ()> {
         let mut out = Vec::new();
         let mut items: Vec<Value> = Vec::new();
         let mut bytes = 0;
@@ -230,7 +275,7 @@ impl Pump {
             if change.seq <= self.last_seq {
                 continue;
             }
-            if let Some(item) = self.item(&change).await {
+            if let Some(item) = self.item(&change).await? {
                 let size = item.to_string().len();
                 if !items.is_empty() && (items.len() >= MAX_BATCH_ITEMS || bytes + size > BATCH_BYTES) {
                     out.push(self.batch(std::mem::take(&mut items)));
@@ -247,7 +292,7 @@ impl Pump {
             self.whole_at_ms = now_ms();
             out.push(self.batch(items));
         }
-        out
+        Ok(out)
     }
 
     /// A batch of everything up to `last_seq`.
@@ -273,8 +318,8 @@ impl Pump {
         self.gap(known.into_iter().collect(), reason)
     }
 
-    async fn item(&self, change: &Change) -> Option<Value> {
-        match change.kind.as_str() {
+    async fn item(&self, change: &Change) -> Result<Option<Value>, ()> {
+        Ok(match change.kind.as_str() {
             "gap" => {
                 let mut chats = Vec::new();
                 for chat in &change.chats {
@@ -290,8 +335,32 @@ impl Pump {
                 Some(self.gap(chats, "the gateway discarded changes"))
             }
             "message" => self.message_item(change).await,
+            "reaction" => return self.reaction_item(change).await,
             _ => None,
+        })
+    }
+
+    async fn reaction_item(&self, change: &Change) -> Result<Option<Value>, ()> {
+        if !self.reactions {
+            return Ok(None);
         }
+        if change.reaction.is_none() {
+            // Retained entries from before reaction_changes.v1 have no action details. They are
+            // not history to reconstruct by reading today's reaction set.
+            tracing::warn!(seq = change.seq, "legacy reaction metadata has no action details; skipped");
+            return Ok(None);
+        }
+        let action = crate::reactions::action(change).map_err(|why| {
+            tracing::warn!(seq = change.seq, "gateway reaction action is invalid: {why}");
+        })?;
+        let chat_id = change.chat.as_ref().map(|c| c.id()).filter(|id| map::gateway_id(id)).ok_or_else(|| {
+            tracing::warn!(seq = change.seq, "gateway reaction action has no valid chat");
+        })?;
+        let chat = self.bridge.chat_by_internal(chat_id).await.map_err(|_| {
+            tracing::warn!(seq = change.seq, "gateway reaction chat cannot be resolved");
+        })?;
+        // The target may be old; the new action must not be filtered by its message's age.
+        Ok(Some(crate::reactions::item(change, &action, &chat, &self.me)))
     }
 
     async fn message_item(&self, change: &Change) -> Option<Value> {
